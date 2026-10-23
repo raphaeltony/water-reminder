@@ -16,9 +16,9 @@ ICON="dialog-information"
 # One of: low, normal, critical.
 URGENCY="normal"
 
-# "off" (default), "on" for the freedesktop completion sound, or a path to a
-# sound file.
-SOUND="off"
+# "on" (default) for the freedesktop completion sound, "off" for silence, or a
+# path to a sound file.
+SOUND="on"
 
 # Messages are picked at random, one per reminder. Uncomment to customize.
 # MESSAGES=(

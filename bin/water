@@ -219,7 +219,7 @@ cmd_config() {
 TITLE="💧 Time to drink water"
 ICON="dialog-information"
 URGENCY="normal"   # low, normal, critical
-SOUND="off"        # "off", "on", or a path to a sound file
+SOUND="on"         # "on" (default), "off", or a path to a sound file
 
 # MESSAGES=(
 #   "Time for a glass of water."

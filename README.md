@@ -15,7 +15,7 @@ A glass of water now keeps the afternoon slump away.
 - Hourly desktop notifications by default; any interval supported (`30min`, `1h`, `90min`, …)
 - Runs entirely in your user session via `systemd --user`
 - Works with `notify-send` (GNOME, KDE, XFCE, Sway, …), with `kdialog` and `zenity` fallbacks
-- Random rotating messages, optional sound, configurable title/icon/urgency
+- Random rotating messages, sound on by default (set `SOUND="off"` to mute), configurable title/icon/urgency
 - A short `water` command for status, resetting the countdown, changing the
   interval, and turning reminders on or off
 - Clean installer and uninstaller; re-running the installer keeps your settings
@@ -26,7 +26,8 @@ A glass of water now keeps the afternoon slump away.
 - Linux with systemd (user instance) — most desktop distributions
 - One notification tool: `notify-send` (package `libnotify-bin` on Debian/Ubuntu,
   `libnotify` on Fedora/Arch), `kdialog`, or `zenity`
-- Optional: `paplay` or `canberra-gtk-play` if you want a sound
+- `paplay` or `canberra-gtk-play` plus a freedesktop sound theme for the default
+  sound; reminders are silent if these are unavailable
 
 ## Quick start
 
@@ -81,7 +82,7 @@ to change the title, icon, urgency, sound, or message list. Example:
 TITLE="💧 Time to drink water"
 ICON="dialog-information"
 URGENCY="normal"   # low | normal | critical
-SOUND="off"        # "off", "on", or a path to a sound file
+SOUND="on"         # "on" (default), "off", or a path to a sound file
 
 MESSAGES=(
   "Time for a glass of water."

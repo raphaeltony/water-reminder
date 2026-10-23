@@ -18,7 +18,7 @@ SKIP_FILE="$STATE_DIR/skip-once"
 TITLE="💧 Time to drink water"
 ICON="dialog-information"
 URGENCY="normal"
-SOUND="off" # "off", "on", or a path to a .oga/.wav/.mp3 file
+SOUND="on" # "on" (default), "off", or a path to a .oga/.wav/.mp3 file
 MESSAGES=(
   "A glass of water now keeps the afternoon slump away."
   "Hydration check: take a few sips. Your body will thank you."
