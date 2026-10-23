@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+#
+# water-reminder — send a friendly hydration notification.
+#
+# This script is meant to be run once per interval by a systemd user timer
+# (see systemd/water-reminder.timer.in). It can also be run manually.
+#
+set -euo pipefail
+
+APP_NAME="water-reminder"
+VERSION="1.0.0"
+
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/water-reminder/config"
+
+# Defaults. Users can override these in the config file (see config.example).
+TITLE="💧 Time to drink water"
+ICON="dialog-information"
+URGENCY="normal"
+SOUND="off" # "off", "on", or a path to a .oga/.wav/.mp3 file
+MESSAGES=(
+  "A glass of water now keeps the afternoon slump away."
+  "Hydration check: take a few sips. Your body will thank you."
+  "Refill your glass — you have earned it."
+  "Small sips, big difference. Drink some water."
+  "Your brain is mostly water. Top it up."
+  "Time for a water break — stretch, breathe, sip."
+  "Stay sharp: drink a glass of water."
+  "A quick sip now beats a headache later."
+)
+
+if [[ -f $CONFIG_FILE ]]; then
+  # shellcheck source=/dev/null
+  source "$CONFIG_FILE"
+fi
+
+usage() {
+  cat <<EOF
+Usage: ${APP_NAME} [OPTION]
+
+Send one hydration reminder using the desktop notification daemon.
+
+Options:
+  -t, --test       Send a test notification
+  -V, --version    Print version and exit
+  -h, --help       Show this help and exit
+
+Configuration:
+  ${CONFIG_FILE}
+
+EOF
+}
+
+# Notifications need a session bus. Inside a systemd user service it is usually
+# already set, but fall back to the standard per-user bus socket just in case.
+if [[ -z ${DBUS_SESSION_BUS_ADDRESS:-} && -S "/run/user/$(id -u)/bus" ]]; then
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+fi
+
+send_notification() {
+  local message=$1
+
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send \
+      --app-name="$APP_NAME" \
+      --icon="$ICON" \
+      --urgency="$URGENCY" \
+      --hint="string:x-canonical-private-synchronous:$APP_NAME" \
+      "$TITLE" "$message"
+  elif command -v kdialog >/dev/null 2>&1; then
+    kdialog --title "$TITLE" --icon "$ICON" --passivepopup "$message" 15
+  elif command -v zenity >/dev/null 2>&1; then
+    zenity --notification --window-icon="$ICON" --text="$TITLE"$'\n'"$message"
+  else
+    printf '%s: %s\n' "$TITLE" "$message" >&2
+    return 1
+  fi
+}
+
+play_sound() {
+  [[ $SOUND == "off" || $SOUND == "none" || -z $SOUND ]] && return 0
+  [[ $SOUND == "on" || $SOUND == "auto" ]] && SOUND="/usr/share/sounds/freedesktop/stereo/complete.oga"
+  [[ -f $SOUND ]] || return 0
+
+  if command -v paplay >/dev/null 2>&1; then
+    paplay "$SOUND" >/dev/null 2>&1 &
+  elif command -v canberra-gtk-play >/dev/null 2>&1; then
+    canberra-gtk-play --file="$SOUND" >/dev/null 2>&1 &
+  fi
+}
+
+remind() {
+  local message=$1
+  send_notification "$message"
+  play_sound
+}
+
+case ${1:-} in
+  -t | --test)
+    remind "Test notification — your water reminder is working. Stay hydrated! 💧"
+    ;;
+  -V | --version)
+    printf '%s %s\n' "$APP_NAME" "$VERSION"
+    ;;
+  -h | --help)
+    usage
+    ;;
+  "")
+    remind "${MESSAGES[RANDOM % ${#MESSAGES[@]}]}"
+    ;;
+  *)
+    printf '%s: unknown option: %s\n\n' "$APP_NAME" "$1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

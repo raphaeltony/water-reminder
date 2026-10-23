@@ -1,0 +1,13 @@
+[Unit]
+Description=Water drinking reminder every @INTERVAL@
+
+[Timer]
+# First reminder is one interval after the timer starts, then once per interval
+# for as long as the timer keeps running.
+OnActiveSec=@INTERVAL@
+OnUnitActiveSec=@INTERVAL@
+AccuracySec=30s
+Unit=water-reminder.service
+
+[Install]
+WantedBy=timers.target

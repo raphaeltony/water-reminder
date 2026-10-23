@@ -1,0 +1,28 @@
+# water-reminder configuration
+#
+# Copy this file to:
+#   ~/.config/water-reminder/config
+# and edit it to taste. It is sourced by the reminder script, so use the same
+# shell syntax shown below.
+
+# Notification title.
+TITLE="💧 Time to drink water"
+
+# Icon name or absolute path to an image. "dialog-information" is available on
+# virtually every desktop; replace it with something like "water" if your icon
+# theme has it.
+ICON="dialog-information"
+
+# One of: low, normal, critical.
+URGENCY="normal"
+
+# "off" (default), "on" for the freedesktop completion sound, or a path to a
+# sound file.
+SOUND="off"
+
+# Messages are picked at random, one per reminder. Uncomment to customize.
+# MESSAGES=(
+#   "Time for a glass of water."
+#   "Hydration check — take a sip."
+#   "Refill your bottle and keep going."
+# )

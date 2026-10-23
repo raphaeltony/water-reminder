@@ -1,0 +1,6 @@
+[Unit]
+Description=Send a water drinking reminder notification
+
+[Service]
+Type=oneshot
+ExecStart=@EXEC@
