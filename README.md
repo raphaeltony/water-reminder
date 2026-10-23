@@ -16,7 +16,9 @@ A glass of water now keeps the afternoon slump away.
 - Runs entirely in your user session via `systemd --user`
 - Works with `notify-send` (GNOME, KDE, XFCE, Sway, …), with `kdialog` and `zenity` fallbacks
 - Random rotating messages, optional sound, configurable title/icon/urgency
-- Clean installer and uninstaller; re-running the installer reconfigures the interval
+- A short `water` command for status, resetting the countdown, changing the
+  interval, and turning reminders on or off
+- Clean installer and uninstaller; re-running the installer keeps your settings
 - No root privileges and no runtime dependencies beyond your existing notification tool
 
 ## Requirements
@@ -34,21 +36,26 @@ cd water-reminder
 ./install.sh
 ```
 
-`install.sh` installs the script to `~/.local/bin/water-reminder`, creates the
-systemd unit files, enables the timer, and starts it. The first notification
-arrives one interval after installation.
+`install.sh` installs two short commands to `~/.local/bin` (`water` and
+`water-reminder`), creates the systemd unit files, enables the timer, and
+starts it. The first notification arrives one interval after installation.
 
-Check the schedule:
+## Everyday commands
 
-```bash
-systemctl --user list-timers water-reminder.timer
-```
+Everything is available through the short `water` command:
 
-Send a test notification immediately:
+| Command | What it does |
+| --- | --- |
+| `water` | Show whether reminders are on, the interval, and the next reminder |
+| `water now` | Send a reminder immediately (`water test` also works) |
+| `water reset` | Restart the countdown — the next reminder is a full interval away |
+| `water interval` | Show the current interval |
+| `water interval 45min` | Change the interval and restart the countdown |
+| `water off` / `water on` | Turn reminders off or back on |
+| `water config` | Open the config file in `$EDITOR` |
+| `water logs` | Show recent reminder logs (`water logs -f` to follow) |
 
-```bash
-~/.local/bin/water-reminder --test
-```
+If `~/.local/bin` is not on your `PATH`, run `~/.local/bin/water` instead.
 
 ## Installer options
 
@@ -60,17 +67,15 @@ Send a test notification immediately:
 | `--test` | Send a test notification after installing |
 | `-h`, `--help` | Show help |
 
-To change the interval later, just run the installer again:
-
-```bash
-./install.sh --interval 45min
-```
+If you omit `--interval`, the installer keeps the interval you already have.
+You can change it at any time with `water interval 45min` — no reinstall
+needed.
 
 ## Configuration
 
 The installer creates `~/.config/water-reminder/config` from
-[`config.example`](config.example) the first time. Edit it to change the title,
-icon, urgency, sound, or message list. Example:
+[`config.example`](config.example) the first time. Open it with `water config`
+to change the title, icon, urgency, sound, or message list. Example:
 
 ```bash
 TITLE="💧 Time to drink water"
@@ -99,13 +104,13 @@ not overwrite an existing config.
   notification and exits.
 - Because it uses a monotonic timer (`OnActiveSec=` + `OnUnitActiveSec=`), the
   countdown starts when the timer starts and resets if you log out, reboot, or
-  restart the timer. A reminder may be delayed or skipped while the machine is
+  run `water reset`. A reminder may be delayed or skipped while the machine is
   suspended.
 
 Logs from the last run:
 
 ```bash
-journalctl --user -u water-reminder.service -n 20
+water logs
 ```
 
 ## Uninstall
@@ -135,8 +140,8 @@ systemd user timers are the recommended setup.
 
 **No notification appears**
 
-1. Run the script directly: `~/.local/bin/water-reminder --test`
-2. If that works, check the service: `systemctl --user status water-reminder.timer`
+1. Run `water now` (or `~/.local/bin/water-reminder --test`).
+2. If that works, check the timer: `water status`
 3. Ensure notifications aren't silenced by Do Not Disturb / Focus mode.
 4. If `notify-send` is missing, install `libnotify-bin` (Debian/Ubuntu) or
    `libnotify` (Fedora/Arch).
@@ -146,14 +151,14 @@ systemd user timers are the recommended setup.
 **Timer is not running**
 
 ```bash
-systemctl --user start water-reminder.timer
-systemctl --user list-timers water-reminder.timer
+water on
+water status
 ```
 
 **I want an immediate first reminder**
 
-The first reminder comes after one interval by design. Run
-`~/.local/bin/water-reminder --test` whenever you want one now.
+The first reminder comes after one interval by design. Run `water now` whenever
+you want one immediately, or `water reset` to start a fresh countdown.
 
 ## License
 

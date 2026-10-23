@@ -1,5 +1,5 @@
 [Unit]
-Description=Water drinking reminder every @INTERVAL@
+Description=Water drinking reminder
 
 [Timer]
 # First reminder is one interval after the timer starts, then once per interval

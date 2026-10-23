@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+#
+# water — a short, friendly front-end for the water-reminder systemd timer.
+#
+set -euo pipefail
+
+VERSION="1.1.0"
+APP_NAME="water-reminder"
+TIMER_UNIT="water-reminder.timer"
+SERVICE_UNIT="water-reminder.service"
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+REMINDER="$SCRIPT_DIR/water-reminder"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/water-reminder"
+CONFIG_FILE="$CONFIG_DIR/config"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/water-reminder"
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+TIMER_FILE="$UNIT_DIR/$TIMER_UNIT"
+
+usage() {
+  cat <<EOF
+Usage: water [COMMAND]
+
+A friendly front-end for the water-reminder timer.
+
+Commands:
+  status              Show whether reminders are on and when the next one is
+  now                 Send a reminder right now (alias: test)
+  reset               Restart the countdown, so the next reminder is a full
+                      interval away (alias: restart)
+  interval [TIME]     Show or change the interval, e.g. "water interval 45min"
+  on                  Turn reminders on (alias: enable)
+  off                 Turn reminders off (alias: disable)
+  config              Open the configuration file in your editor
+  logs                Show recent reminder logs (alias: log)
+  version             Print the version
+  help                Show this help
+
+Without a command, "water" shows the current status.
+
+EOF
+}
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+require_systemd() {
+  command -v systemctl >/dev/null 2>&1 ||
+    die "systemctl not found. water-reminder needs systemd."
+  systemctl --user show-environment >/dev/null 2>&1 ||
+    die "cannot talk to the systemd user instance. Are you in a graphical login session?"
+}
+
+require_installed() {
+  require_systemd
+  [[ -f $TIMER_FILE ]] ||
+    die "water-reminder is not installed. Run ./install.sh from the repo first."
+  [[ -x $REMINDER ]] ||
+    die "the reminder script is missing. Re-run ./install.sh from the repo."
+}
+
+current_interval() {
+  local interval=""
+  if [[ -f $TIMER_FILE ]]; then
+    interval=$(awk -F= '/^OnActiveSec=/ {print $2; exit}' "$TIMER_FILE")
+  fi
+  printf '%s\n' "${interval:-1h}"
+}
+
+validate_interval() {
+  local interval=$1
+  [[ $interval =~ ^[0-9]+(us|ms|s|sec|min|m|h|hr|d|w)?$ ]] ||
+    die "invalid interval '$interval'. Try 30min, 45min, 1h, or 90min."
+  [[ $interval =~ ^0+(us|ms|s|sec|min|m|h|hr|d|w)?$ ]] &&
+    die "interval must be greater than zero."
+  if command -v systemd-analyze >/dev/null 2>&1; then
+    systemd-analyze timespan "$interval" >/dev/null 2>&1 ||
+      die "systemd cannot parse the interval '$interval'."
+  fi
+}
+
+timer_is_active() {
+  [[ $(systemctl --user is-active "$TIMER_UNIT" 2>/dev/null || true) == "active" ]]
+}
+
+next_reminder_line() {
+  local line next_str next_epoch now_epoch diff days hours mins human=""
+  line=$(systemctl --user list-timers "$TIMER_UNIT" --no-pager 2>/dev/null |
+    awk 'NR==2') || true
+  [[ -n $line ]] || return 0
+
+  next_str=$(awk '{print $1, $2, $3, $4}' <<<"$line")
+  if ! next_epoch=$(date -d "$next_str" +%s 2>/dev/null); then
+    printf '%s\n' "$next_str"
+    return 0
+  fi
+
+  now_epoch=$(date +%s)
+  diff=$((next_epoch - now_epoch))
+  ((diff < 0)) && diff=0
+  days=$((diff / 86400))
+  hours=$(((diff % 86400) / 3600))
+  mins=$(((diff % 3600) / 60))
+
+  ((days > 0)) && human+="${days}d "
+  ((hours > 0)) && human+="${hours}h "
+  ((mins > 0)) && human+="${mins}min "
+  [[ -z $human ]] && human="${diff}s"
+
+  printf '%s (in %s)\n' "$next_str" "${human% }"
+}
+
+show_status() {
+  require_installed
+  local interval
+  interval=$(current_interval)
+
+  if timer_is_active; then
+    printf 'Water reminder: on\n'
+    printf 'Interval:       every %s\n' "$interval"
+    local next
+    next=$(next_reminder_line)
+    [[ -n $next ]] && printf 'Next reminder:  %s\n' "$next"
+  else
+    printf 'Water reminder: off\n'
+    printf 'Interval:       every %s\n' "$interval"
+    printf 'Turn it on with: water on\n'
+  fi
+}
+
+enable_timer() {
+  systemctl --user enable --now "$TIMER_UNIT" >/dev/null 2>&1
+}
+
+# systemd anchors OnUnitActiveSec to the last time the service ran. Run the
+# service once with a skip flag so a fresh interval starts now without showing
+# a notification.
+silent_service_run() {
+  local skip_file="$STATE_DIR/skip-once"
+  mkdir -p "$STATE_DIR"
+  touch "$skip_file"
+  if ! systemctl --user start "$SERVICE_UNIT"; then
+    rm -f "$skip_file"
+    return 1
+  fi
+  rm -f "$skip_file"
+}
+
+cmd_reset() {
+  require_installed
+  silent_service_run || die "could not reset the timer."
+  systemctl --user enable "$TIMER_UNIT" >/dev/null 2>&1 || true
+  systemctl --user restart "$TIMER_UNIT"
+  printf 'Timer reset. Next reminder in %s.\n' "$(current_interval)"
+}
+
+cmd_interval() {
+  require_installed
+
+  if [[ $# -eq 0 ]]; then
+    printf 'Current interval: %s\n' "$(current_interval)"
+    return 0
+  fi
+
+  local interval=$1
+  validate_interval "$interval"
+
+  local was_active=0
+  timer_is_active && was_active=1
+
+  # The timer is generated by install.sh, so keep the two interval lines in
+  # sync without needing a separate config file.
+  sed -i \
+    -e "s|^OnActiveSec=.*|OnActiveSec=$interval|" \
+    -e "s|^OnUnitActiveSec=.*|OnUnitActiveSec=$interval|" \
+    "$TIMER_FILE"
+
+  systemctl --user daemon-reload
+
+  if [[ $was_active -eq 1 ]]; then
+    silent_service_run || die "could not restart the timer."
+    systemctl --user restart "$TIMER_UNIT"
+    printf 'Interval set to %s. Next reminder in %s.\n' "$interval" "$interval"
+  else
+    printf 'Interval set to %s. Reminders are off; turn them on with "water on".\n' "$interval"
+  fi
+}
+
+cmd_on() {
+  require_installed
+
+  if timer_is_active; then
+    printf 'Reminders are already on.\n'
+    show_status
+    return 0
+  fi
+
+  silent_service_run || die "could not start the timer."
+  enable_timer
+  printf 'Reminders on. Next one in %s.\n' "$(current_interval)"
+}
+
+cmd_off() {
+  require_installed
+  systemctl --user disable --now "$TIMER_UNIT" >/dev/null 2>&1
+  printf 'Reminders off. Turn them back on with "water on".\n'
+}
+
+cmd_config() {
+  mkdir -p "$CONFIG_DIR"
+  if [[ ! -f $CONFIG_FILE ]]; then
+    cat >"$CONFIG_FILE" <<'EOF'
+# water-reminder configuration
+#
+# Uncomment and edit the settings you want to change. Defaults are shown.
+
+TITLE="💧 Time to drink water"
+ICON="dialog-information"
+URGENCY="normal"   # low, normal, critical
+SOUND="off"        # "off", "on", or a path to a sound file
+
+# MESSAGES=(
+#   "Time for a glass of water."
+#   "Hydration check — take a sip."
+# )
+EOF
+  fi
+
+  local editor=${VISUAL:-${EDITOR:-}}
+  if [[ -z $editor ]]; then
+    if command -v nano >/dev/null 2>&1; then
+      editor=nano
+    elif command -v vi >/dev/null 2>&1; then
+      editor=vi
+    else
+      printf 'No editor found. Edit this file manually:\n  %s\n' "$CONFIG_FILE"
+      return 0
+    fi
+  fi
+
+  # Word splitting is intentional: $EDITOR may contain arguments.
+  # shellcheck disable=SC2086
+  $editor "$CONFIG_FILE"
+}
+
+cmd_logs() {
+  require_systemd
+  journalctl --user -u "$SERVICE_UNIT" -n 30 --no-pager "$@"
+}
+
+case ${1:-} in
+  "")
+    show_status
+    ;;
+  status | st)
+    show_status
+    ;;
+  now | test)
+    require_installed
+    "$REMINDER" --test
+    ;;
+  reset | restart)
+    cmd_reset
+    ;;
+  interval | every)
+    shift
+    cmd_interval "$@"
+    ;;
+  on | enable)
+    cmd_on
+    ;;
+  off | disable)
+    cmd_off
+    ;;
+  config | cfg)
+    cmd_config
+    ;;
+  logs | log)
+    shift
+    cmd_logs "$@"
+    ;;
+  version | --version | -V)
+    printf '%s %s\n' "$APP_NAME" "$VERSION"
+    ;;
+  help | --help | -h)
+    usage
+    ;;
+  *)
+    printf 'water: unknown command: %s\n\n' "$1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

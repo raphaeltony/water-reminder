@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
-INTERVAL="1h"
+INTERVAL=""
 BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 START=1
@@ -27,7 +27,8 @@ Options:
   -h, --help        Show this help and exit
 
 The installer does not need root and only touches files in your home directory.
-Re-run it with a different --interval to reconfigure an existing install.
+Re-run it to upgrade or with a different --interval to reconfigure. If you omit
+--interval, the currently configured interval is kept.
 
 EOF
 }
@@ -85,6 +86,16 @@ done
 # generated systemd unit works regardless of the service's working directory.
 BIN_DIR=$(realpath -m -- "$BIN_DIR")
 
+# Preserve a previously configured interval when --interval is omitted, so a
+# plain re-run of the installer does not silently undo "water interval".
+if [[ -z $INTERVAL ]]; then
+  if [[ -f $UNIT_DIR/water-reminder.timer ]]; then
+    INTERVAL=$(awk -F= '/^OnActiveSec=/ {print $2; exit}' \
+      "$UNIT_DIR/water-reminder.timer")
+  fi
+  INTERVAL=${INTERVAL:-1h}
+fi
+
 # --- Preflight checks ------------------------------------------------------
 
 command -v systemctl >/dev/null 2>&1 ||
@@ -107,6 +118,8 @@ fi
 
 [[ -f $SCRIPT_DIR/bin/water-reminder ]] ||
   die "bin/water-reminder not found next to install.sh."
+[[ -f $SCRIPT_DIR/bin/water ]] ||
+  die "bin/water not found next to install.sh."
 [[ -f $SCRIPT_DIR/systemd/water-reminder.service.in ]] ||
   die "systemd/water-reminder.service.in not found next to install.sh."
 [[ -f $SCRIPT_DIR/systemd/water-reminder.timer.in ]] ||
@@ -123,6 +136,7 @@ fi
 
 install -d "$BIN_DIR" "$UNIT_DIR"
 install -m 0755 "$SCRIPT_DIR/bin/water-reminder" "$BIN_DIR/water-reminder"
+install -m 0755 "$SCRIPT_DIR/bin/water" "$BIN_DIR/water"
 
 render_unit() {
   local template=$1 output=$2 content
@@ -145,14 +159,14 @@ if [[ ! -e $CONFIG_DIR/config && -f $SCRIPT_DIR/config.example ]]; then
 fi
 
 systemctl --user daemon-reload
-systemctl --user enable water-reminder.timer >/dev/null
+systemctl --user enable water-reminder.timer >/dev/null 2>&1
 
 if [[ $START -eq 1 ]]; then
-  systemctl --user restart water-reminder.timer
+  "$BIN_DIR/water" reset >/dev/null
 fi
 
 if [[ $SEND_TEST -eq 1 ]]; then
-  "$BIN_DIR/water-reminder" --test || true
+  "$BIN_DIR/water" now || true
 fi
 
 # --- Done ------------------------------------------------------------------
@@ -161,16 +175,16 @@ cat <<EOF
 
 water-reminder installed.
 
-  Script:    $BIN_DIR/water-reminder
+  Commands:  water           (status and any of the commands below)
+             water now       send a reminder immediately
+             water reset     restart the countdown
+             water interval  change how often you are reminded, e.g. 45min
+             water off/on    turn reminders off or back on
+
+  Script:    $BIN_DIR/water
   Timer:     $UNIT_DIR/water-reminder.timer
   Config:    $CONFIG_DIR/config
   Interval:  every $INTERVAL
-
-Check the schedule with:
-  systemctl --user list-timers water-reminder.timer
-
-Send a test notification with:
-  $BIN_DIR/water-reminder --test
 
 Uninstall with:
   $SCRIPT_DIR/uninstall.sh

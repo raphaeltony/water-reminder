@@ -7,6 +7,7 @@ set -euo pipefail
 BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/water-reminder"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/water-reminder"
 PURGE=0
 
 usage() {
@@ -17,7 +18,7 @@ Stop and remove the water reminder timer, service, and script.
 
 Options:
   --bin-dir DIR   Directory the script was installed to (default: ~/.local/bin)
-  --purge         Also delete your configuration directory
+  --purge         Also delete your configuration and state
   -h, --help      Show this help and exit
 
 EOF
@@ -62,18 +63,18 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 rm -f "$UNIT_DIR/water-reminder.timer" "$UNIT_DIR/water-reminder.service"
-rm -f "$BIN_DIR/water-reminder"
+rm -f "$BIN_DIR/water-reminder" "$BIN_DIR/water"
 
 if command -v systemctl >/dev/null 2>&1; then
   systemctl --user daemon-reload || true
 fi
 
 if [[ $PURGE -eq 1 ]]; then
-  rm -rf "$CONFIG_DIR"
+  rm -rf "$CONFIG_DIR" "$STATE_DIR"
 fi
 
 printf 'water-reminder uninstalled.'
 if [[ $PURGE -eq 1 ]]; then
-  printf ' Configuration removed.'
+  printf ' Configuration and state removed.'
 fi
 printf '\n'
